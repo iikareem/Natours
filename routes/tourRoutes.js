@@ -34,7 +34,9 @@ router
 router
   .route('/:id')
   .get(tourController.GetTourByID)  // Get By ID
-  .patch(authController.protect, authController.restrictTo('admin','lead-guide'),tourController.UpdateData)  // UPDATE BY ID
+  .patch(authController.protect, authController.restrictTo('admin','lead-guide'), tourController.uploadTourImages,
+    tourController.resizeTourImage
+    ,tourController.UpdateData)  // UPDATE BY ID
   .delete(authController.protect, authController.restrictTo('admin','lead-guide'), tourController.DeleteTour); // Delete BY ID
 
 router.use('/:tourId/reviews',reviewRoute);

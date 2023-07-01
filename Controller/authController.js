@@ -3,7 +3,7 @@ const User = require('./../models/userModel');
 const catchAsync = require('./../utils/catchAsync');
 const jwt = require('jsonwebtoken');
 const AppError = require('./../utils/AppError');
-const sendEmail = require('./../utils/email');
+const Email = require('./../utils/email');
 const crypto = require('crypto');
 
 // Overall, this function generates a signed JWT token
@@ -46,6 +46,8 @@ exports.signup = catchAsync(async (req, res, next) => {
     role : req.body.role
   });
 
+  const url = `${req.protocol}://${req.get('host')}/me`;
+  await new Email(newUser, url).sendWelcome();
   createSendToken(newUser,201,res);
 
 
@@ -86,6 +88,9 @@ exports.protect = catchAsync(async (req, res, next) => {
   let token;
   if ( req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1]; }
+  else if (req.cookies.jwt){
+    token = req.cookies.jwt;
+  }
 
   if (!token) {
     return next(
@@ -123,9 +128,44 @@ exports.protect = catchAsync(async (req, res, next) => {
   // the application is indicating that the user associated with the current request is currentUser.
   console.log(currentUser);
   req.user = currentUser;
+  res.locals.user = currentUser;
   console.log(req.user);
   next();
 });
+
+exports.isLoggedIn = catchAsync(async (req, res, next) => {
+  if (req.cookies.jwt === 'loggedOut') return next();
+  if (req.cookies.jwt){
+
+
+    const decoded = await promisify(jwt.verify)(req.cookies.jwt, process.env.JWT_SECRET);
+    const currentUser = await User.findById(decoded.id);
+
+  if (!currentUser) {
+    return next();
+  }
+
+  if (currentUser.changedPasswordAfter(decoded.iat)) {
+    return next();
+  }
+
+
+  res.locals.user = currentUser;
+    console.log(res.locals);
+  return next();
+  }
+  next();
+});
+
+exports.logout = (req,res) =>{
+  res.cookie('jwt','loggedOut', {
+    expires: new Date(Date.now() + 10 * 1000),
+    httpOnly: true
+  });
+
+  res.status(200).json({  status : 'success'});
+
+};
 
 exports.restrictTo = (...roles) =>{
   return (req,res,next) =>{
@@ -154,18 +194,17 @@ exports.forgetPassword = catchAsync( async (req,res,next)=>{
   user.save({validateBeforeSave: false});
 
 
-  const resetURL = `${req.protocol}://${req.get('host')}/api/v1/users/resetPassword/${resetToken}`;
-
-  const message = `Anta shklk nseet el password YAAD a3ml patch request bel password el gdeda we al confirm
-  le ${resetURL}.\n lw msh 3amel yb2a ignore this message we 2odmak 10 minus bs haaa !!`;
+  // const resetURL = `${req.protocol}://${req.get('host')}/api/v1/users/resetPassword/${resetToken}`;
+  //
+  // const message = `Anta shklk nseet el password YAAD a3ml patch request bel password el gdeda we al confirm
+  // le ${resetURL}.\n lw msh 3amel yb2a ignore this message we 2odmak 10 minus bs haaa !!`;
 
   try {
 
-  await sendEmail({
-    email : req.body.email,
-    subject : 'Your Password Token',
-    message
-  });
+    const resetURL = `${req.protocol}://${req.get(
+      'host'
+    )}/api/v1/users/resetPassword/${resetToken}`;
+    await new Email(user, resetURL).sendPasswordReset();
 
 
   res.status(200).json({
